@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-
+import 'package:web_socket_channel/html.dart';
 import 'package:web_socket_channel/io.dart';
-
 import 'channel_id.dart';
 
 typedef _OnConnectedFunction = void Function();
@@ -15,11 +14,12 @@ typedef _OnChannelMessageFunction = void Function(Map message);
 class ActionCable {
   DateTime? _lastPing;
   late Timer _timer;
-  late IOWebSocketChannel _socketChannel;
+  late var _socketChannel;
   late StreamSubscription _listener;
   _OnConnectedFunction? onConnected;
   _OnCannotConnectFunction? onCannotConnect;
   _OnConnectionLostFunction? onConnectionLost;
+  bool isWeb;
   Map<String, _OnChannelSubscribedFunction?> _onChannelSubscribedCallbacks = {};
   Map<String, _OnChannelDisconnectedFunction?> _onChannelDisconnectedCallbacks =
       {};
@@ -31,10 +31,15 @@ class ActionCable {
     this.onConnected,
     this.onConnectionLost,
     this.onCannotConnect,
+    this.isWeb = false,
   }) {
     // rails gets a ping every 3 seconds
-    _socketChannel = IOWebSocketChannel.connect(url,
-        headers: headers, pingInterval: Duration(seconds: 3));
+    if (isWeb) {
+      _socketChannel = HtmlWebSocketChannel.connect(url);
+    } else {
+      _socketChannel = IOWebSocketChannel.connect(url,
+          headers: headers, pingInterval: Duration(seconds: 3));
+    }
     _listener = _socketChannel.stream.listen(_onData, onError: (_) {
       this.disconnect(); // close a socket and the timer
       if (this.onCannotConnect != null) this.onCannotConnect!();
