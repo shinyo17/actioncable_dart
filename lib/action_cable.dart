@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:web_socket_channel/html.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/io.dart';
 import 'channel_id.dart';
 
@@ -35,15 +35,22 @@ class ActionCable {
   }) {
     // rails gets a ping every 3 seconds
     if (isWeb) {
-      _socketChannel = HtmlWebSocketChannel.connect(url);
+      _socketChannel = WebSocketChannel.connect(
+        Uri.parse(url),
+      );
+      _listener = _socketChannel.stream.listen(_onData, onError: (_) {
+        this.disconnect(); // close a socket and the timer
+        if (this.onCannotConnect != null) this.onCannotConnect!();
+      });
     } else {
       _socketChannel = IOWebSocketChannel.connect(url,
           headers: headers, pingInterval: Duration(seconds: 3));
+      _listener = _socketChannel.stream.listen(_onData, onError: (_) {
+        this.disconnect(); // close a socket and the timer
+        if (this.onCannotConnect != null) this.onCannotConnect!();
+      });
     }
-    _listener = _socketChannel.stream.listen(_onData, onError: (_) {
-      this.disconnect(); // close a socket and the timer
-      if (this.onCannotConnect != null) this.onCannotConnect!();
-    });
+
     _timer = Timer.periodic(const Duration(seconds: 3), healthCheck);
   }
 
