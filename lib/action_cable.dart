@@ -136,6 +136,7 @@ class ActionCable {
         }
         break;
       case 'disconnect':
+        print(payload);
         final channelId = parseChannelId(payload['identifier']);
         final onDisconnected = _onChannelDisconnectedCallbacks[channelId];
         if (onDisconnected != null) {
