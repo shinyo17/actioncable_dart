@@ -117,6 +117,7 @@ class ActionCable {
     payload = jsonDecode(payload);
 
     if (payload['type'] != null) {
+      print(payload);
       _handleProtocolMessage(payload);
     } else {
       _handleDataMessage(payload);
