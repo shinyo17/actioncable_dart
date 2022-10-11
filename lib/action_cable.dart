@@ -37,6 +37,7 @@ class ActionCable {
     if (isWeb) {
       _socketChannel = WebSocketChannel.connect(
         Uri.parse(url),
+        protocols: {},
       );
       _listener = _socketChannel.stream.listen(_onData, onError: (_) {
         this.disconnect(); // close a socket and the timer
@@ -117,7 +118,6 @@ class ActionCable {
     payload = jsonDecode(payload);
 
     if (payload['type'] != null) {
-      print(payload);
       _handleProtocolMessage(payload);
     } else {
       _handleDataMessage(payload);
@@ -137,11 +137,18 @@ class ActionCable {
         }
         break;
       case 'disconnect':
-        print(payload);
-        final channelId = parseChannelId(payload['identifier']);
-        final onDisconnected = _onChannelDisconnectedCallbacks[channelId];
-        if (onDisconnected != null) {
-          onDisconnected();
+        final identifier = payload['identifier'];
+        if (identifier != null) {
+          final channelId = parseChannelId(payload['identifier']);
+          final onDisconnected = _onChannelDisconnectedCallbacks[channelId];
+          if (onDisconnected != null) {
+            onDisconnected();
+          }
+        } else {
+          final reason = payload['reason'];
+          if (reason != null && reason == 'unauthorized') {
+            if (this.onCannotConnect != null) this.onCannotConnect!();
+          }
         }
         break;
       case 'confirm_subscription':
