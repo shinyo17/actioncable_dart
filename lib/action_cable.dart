@@ -14,6 +14,8 @@ typedef _OnChannelMessageFunction = void Function(Map message);
 class ActionCable {
   DateTime? _lastPing;
   late Timer _timer;
+  Duration? timeoutAfter;
+  Duration? healthCheckDuration;
   late var _socketChannel;
   late StreamSubscription _listener;
   _OnConnectedFunction? onConnected;
@@ -21,13 +23,14 @@ class ActionCable {
   _OnConnectionLostFunction? onConnectionLost;
   bool isWeb;
   Map<String, _OnChannelSubscribedFunction?> _onChannelSubscribedCallbacks = {};
-  Map<String, _OnChannelDisconnectedFunction?> _onChannelDisconnectedCallbacks =
-      {};
+  Map<String, _OnChannelDisconnectedFunction?> _onChannelDisconnectedCallbacks = {};
   Map<String, _OnChannelMessageFunction?> _onChannelMessageCallbacks = {};
 
   ActionCable.Connect(
     String url, {
     Map<String, String> headers: const {},
+    this.healthCheckDuration,
+    this.timeoutAfter,
     this.onConnected,
     this.onConnectionLost,
     this.onCannotConnect,
@@ -44,21 +47,25 @@ class ActionCable {
         if (this.onCannotConnect != null) this.onCannotConnect!();
       });
     } else {
-      _socketChannel = IOWebSocketChannel.connect(url,
-          headers: headers, pingInterval: Duration(seconds: 3));
+      _socketChannel = IOWebSocketChannel.connect(url, headers: headers, pingInterval: Duration(seconds: 3));
       _listener = _socketChannel.stream.listen(_onData, onError: (_) {
         this.disconnect(); // close a socket and the timer
         if (this.onCannotConnect != null) this.onCannotConnect!();
       });
     }
 
-    _timer = Timer.periodic(const Duration(seconds: 3), healthCheck);
+    if (healthCheckDuration != null) {
+      _timer = Timer.periodic(healthCheckDuration ?? const Duration(seconds: 3), healthCheck);
+    }
   }
 
   void disconnect() {
     _timer.cancel();
     _socketChannel.sink.close();
     _listener.cancel();
+    _onChannelDisconnectedCallbacks.values.where((onDisconnected) => onDisconnected != null).forEach((onDisconnected) {
+      onDisconnected!();
+    });
   }
 
   // check if there is no ping for 3 seconds and signal a [onConnectionLost] if
@@ -67,7 +74,7 @@ class ActionCable {
     if (_lastPing == null) {
       return;
     }
-    if (DateTime.now().difference(_lastPing!) > Duration(seconds: 6)) {
+    if (DateTime.now().difference(_lastPing as DateTime) > (timeoutAfter ?? const Duration(seconds: 6))) {
       this.disconnect();
       if (this.onConnectionLost != null) this.onConnectionLost!();
     }
@@ -96,22 +103,16 @@ class ActionCable {
     _onChannelDisconnectedCallbacks[channelId] = null;
     _onChannelMessageCallbacks[channelId] = null;
 
-    _socketChannel.sink
-        .add(jsonEncode({'identifier': channelId, 'command': 'unsubscribe'}));
+    _socketChannel.sink.add(jsonEncode({'identifier': channelId, 'command': 'unsubscribe'}));
   }
 
-  void performAction(String channelName,
-      {String? action, Map? channelParams, Map? actionParams}) {
+  void performAction(String channelName, {String? action, Map? channelParams, Map? actionParams}) {
     final channelId = encodeChannelId(channelName, channelParams);
 
     actionParams ??= {};
     actionParams['action'] = action;
 
-    _send({
-      'identifier': channelId,
-      'command': 'message',
-      'data': jsonEncode(actionParams)
-    });
+    _send({'identifier': channelId, 'command': 'message', 'data': jsonEncode(actionParams)});
   }
 
   void _onData(dynamic payload) {
@@ -128,8 +129,7 @@ class ActionCable {
     switch (payload['type']) {
       case 'ping':
         // rails sends epoch as seconds not miliseconds
-        _lastPing =
-            DateTime.fromMillisecondsSinceEpoch(payload['message'] * 1000);
+        _lastPing = DateTime.fromMillisecondsSinceEpoch(payload['message'] * 1000);
         break;
       case 'welcome':
         if (onConnected != null) {
